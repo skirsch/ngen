@@ -78,7 +78,7 @@ def print_with_box(x):
 #                                  FLASK SETUP                                 #
 # ============================================================================ #
 app = Flask(__name__)
-app.secret_key = random_alphanumeric_string(24)  # For session management CHANGE IN PROD
+app.secret_key = global_challenge  # For session management CHANGE IN PROD
 
 
 # --------------------------------- HOME PAGE -------------------------------- #
@@ -121,7 +121,7 @@ def register_post():
             credential=request_json,
             expected_challenge=global_challenge,
             expected_rp_id=global_rp_id,
-            expected_origin="http://localhost:8080",
+            expected_origin=global_expected_origin,
         )
 
         if verification.user_verified == True:
@@ -166,6 +166,7 @@ def login_get():
 # ============================================================================ #
 #                        PASSKEY AUTHENTICATION PHASE 2                        #
 # ============================================================================ #
+# TODO: Test if spoofing the key works
 @app.post("/verify-authentication")
 def login_post():
     user_name = session.get("user_name")
@@ -177,7 +178,7 @@ def login_post():
                 credential=request_json,
                 expected_challenge=global_challenge,
                 expected_rp_id=global_rp_id,
-                expected_origin="http://localhost:8080",
+                expected_origin=global_expected_origin,
                 credential_current_sign_count=0,  # TODO: Update dict to hold this and increment
                 credential_public_key=verified_registration.credential_public_key,
             )
