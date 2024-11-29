@@ -1,304 +1,197 @@
-from flask import Flask, request, jsonify, render_template, session
-from fido2.server import Fido2Server
-from fido2.webauthn import AttestationObject, AuthenticatorData
-from fido2.webauthn import PublicKeyCredentialRpEntity, PublicKeyCredentialUserEntity
-from fido2.utils import websafe_encode, websafe_decode
-import base64
+import json
+from flask import Flask, abort, request, jsonify, render_template, session
 import os
-import traceback
-os.environ['WERKZEUG_DEBUG_PIN'] = 'off'
+import secrets
+import string
+from webauthn import (
+    generate_authentication_options,
+    generate_registration_options,
+    verify_authentication_response,
+    verify_registration_response,
+    options_to_json,
+    base64url_to_bytes,
+)
+from webauthn.helpers.cose import COSEAlgorithmIdentifier
+from webauthn.helpers.structs import (
+    AttestationConveyancePreference,
+    AuthenticatorAttachment,
+    AuthenticatorSelectionCriteria,
+    PublicKeyCredentialDescriptor,
+    ResidentKeyRequirement,
+    UserVerificationRequirement,
+)
+from dataclasses import asdict
+import pickle
+from threading import Lock
 
-# Flask app setup
+# ============================================================================ #
+#                                    GLOBALS                                   #
+# ============================================================================ #
+os.environ["WERKZEUG_DEBUG_PIN"] = "off"
+# Global Challenge
+global_challenge: bytes = b"dead beef hi hi hi test hi"
+
+# ----------------------------- WENAUTHN GLOBALS ----------------------------- #
+global_rp_id = "localhost"
+global_rp_name = "ZeroID"
+global_expected_origin = "http://localhost:8080"
+
+# ============================================================================ #
+#                              SIMULATED DATABASE                              #
+# ============================================================================ #
+db_mutex = Lock()  # Prevent data-races. Use for "transactions".
+
+
+def load_users():
+    try:
+        with db_mutex:
+            with open("data.pkl", "rb") as f:
+                return pickle.load(f)
+    except FileNotFoundError:
+        return {}  # Make an empty Dict if the file doesn't exist
+
+
+users = load_users()
+
+
+def save_users(users):
+    with db_mutex:
+        with open("data.pkl", "wb") as f:
+            return pickle.dump(users, f)
+
+
+# ============================================================================ #
+#                                  MISCELLANY                                  #
+# ============================================================================ #
+def random_alphanumeric_string(length: int):
+    characters = string.ascii_letters + string.digits
+    return "".join(secrets.choice(characters) for _ in range(length))
+
+
+def print_with_box(x):
+    print(f"\n\n# ================================= #\n")
+    print(x)
+    print(f"\n# ================================= #\n\n")
+
+
+# ============================================================================ #
+#                                  FLASK SETUP                                 #
+# ============================================================================ #
 app = Flask(__name__)
-app.secret_key = os.urandom(24)  # For session management
+app.secret_key = global_challenge  # For session management CHANGE IN PROD
 
-# WebAuthn setup
-rp = PublicKeyCredentialRpEntity(id="localhost", name="My WebAuthn Server")
-server = Fido2Server(rp)
 
-# Simulated database
-users = {}
-
-# Home page
+# --------------------------------- HOME PAGE -------------------------------- #
 @app.route("/")
 def home():
-    return """
-    <h1>Welcome to the WebAuthn Demo</h1>
-    <button onclick="registerPasskey()">Create a Passkey</button>
-    <button onclick="loginPasskey()">Login via Passkey</button>
-    <script>
-        
-        function bufferDecode(value) {
-            const binaryString = atob(value);
-            const len = binaryString.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-            }
-            return bytes.buffer;
-        }
+    # TODO: Change to use Flask/Jinja2 templating
+    with open("static/index.html") as f:
+        return f.read()
 
-        async function registerPasskey() {
-            try {
-                const response = await fetch('/register', { method: 'GET' });
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`Server error: ${errorText}`);
-                }
-                const options = await response.json();
-                
-                // Debugging note: Displaying registration options in the console for verification purposes
-                console.log('Registration options:', options); 
 
-                // Remove fields that are not explicitly required or are null
-                if (options.publicKey.attestation === null) {
-                    delete options.publicKey.attestation;
-                }
-                if (options.publicKey.authenticatorSelection && options.publicKey.authenticatorSelection.authenticatorAttachment === null) {
-                    delete options.publicKey.authenticatorSelection.authenticatorAttachment;
-                }
+# ============================================================================ #
+#                        PASSKEY REGISTRATION GENERATION                       #
+# ============================================================================ #
+@app.get("/generate-registration-options")
+def register_get():
+    user_name = random_alphanumeric_string(6)
+    session["user_name"] = user_name
+    generated_registration_options = generate_registration_options(
+        rp_id=global_rp_id,
+        rp_name=global_rp_name,
+        user_name=user_name,
+        challenge=global_challenge,
+    )
 
-                // Convert challenge and user.id to ArrayBuffer
-                options.publicKey.challenge = bufferDecode(options.publicKey.challenge);
-                options.publicKey.user.id = bufferDecode(options.publicKey.user.id);
-                options.publicKey.excludeCredentials = options.publicKey.excludeCredentials.map(cred => {
-                    cred.id = bufferDecode(cred.id);
-                    return cred;
-                });
+    opts = options_to_json(generated_registration_options)
 
-                const credential = await navigator.credentials.create({ publicKey: options.publicKey });
-                const attestationObject = btoa(String.fromCharCode(...new Uint8Array(credential.response.attestationObject)));
-                const clientDataJSON = btoa(String.fromCharCode(...new Uint8Array(credential.response.clientDataJSON)));
+    print_with_box(opts)
 
-                const registrationResponse = await fetch('/register', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        id: credential.id,
-                        rawId: btoa(String.fromCharCode(...new Uint8Array(credential.rawId))),
-                        type: credential.type,
-                        attestationObject: attestationObject,
-                        clientDataJSON: clientDataJSON
-                    })
-                });
+    return opts
 
-                if (!registrationResponse.ok) {
-                    const error = await registrationResponse.json();
-                    throw new Error(`Server error: ${error.message}`);
-                }
 
-                alert('Passkey registration successful!');
-            } catch (err) {
-                console.error('Passkey registration failed:', err);
-                alert('Passkey registration failed! Check console for more details.');
-            }
-        }
+# ============================================================================ #
+#                       PASSKEY REGISTRATION VERIFICATION                      #
+# ============================================================================ #
+@app.post("/verify-registration")
+def register_post():
+    if request.is_json:
+        request_json = request.get_json()
+        verification = verify_registration_response(
+            credential=request_json,
+            expected_challenge=global_challenge,
+            expected_rp_id=global_rp_id,
+            expected_origin=global_expected_origin,
+        )
 
-        async function loginPasskey() {
-            try {
-                const response = await fetch('/login', { method: 'GET' });
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`Server error: ${errorText}`);
-                }
-                const options = await response.json();
-                console.log('Login options:', options); // Debugging note: Displaying login options in the console for verification purposes
+        if verification.user_verified == True:
+            user_name = session["user_name"]
+            print_with_box(user_name)
+            users[user_name] = verification
+            save_users(users)
 
-                // Remove fields that are not explicitly required or are null
-                if (options.publicKey.authenticatorSelection && options.publicKey.authenticatorSelection.authenticatorAttachment === null) {
-                    delete options.publicKey.authenticatorSelection.authenticatorAttachment;
-                }
+            verification_json = json.dumps(asdict(verification), default=str)
+            print_with_box(verification_json)
+            return verification_json
 
-                // Convert challenge and allowCredentials.id to ArrayBuffer
-                options.publicKey.challenge = bufferDecode(options.publicKey.challenge);
-                options.publicKey.allowCredentials = options.publicKey.allowCredentials.map(cred => {
-                    cred.id = bufferDecode(cred.id);
-                    return cred;
-                });
+    abort(500)
 
-                const assertion = await navigator.credentials.get({ publicKey: options.publicKey });
-                const clientDataJSON = btoa(String.fromCharCode(...new Uint8Array(assertion.response.clientDataJSON)));
-                const authenticatorData = btoa(String.fromCharCode(...new Uint8Array(assertion.response.authenticatorData)));
-                const signature = btoa(String.fromCharCode(...new Uint8Array(assertion.response.signature)));
 
-                const loginResponse = await fetch('/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        id: assertion.id,
-                        rawId: btoa(String.fromCharCode(...new Uint8Array(assertion.rawId))),
-                        type: assertion.type,
-                        clientDataJSON: clientDataJSON,
-                        authenticatorData: authenticatorData,
-                        signature: signature
-                    })
-                });
+# ============================================================================ #
+#                        PASSKEY AUTHENTICATION PHASE 1                        #
+# ============================================================================ #
+@app.get("/generate-authentication-options")
+def login_get():
+    user_name = session.get("user_name")
+    if user_name is not None and user_name in users:
+        print_with_box(users[user_name])
+        verified_registration = users[user_name]
+        auth_options = generate_authentication_options(
+            rp_id=global_rp_id,
+            challenge=global_challenge,
+            user_verification=UserVerificationRequirement.REQUIRED,
+            allow_credentials=[
+                PublicKeyCredentialDescriptor(id=verified_registration.credential_id)
+            ],
+        )
+        opts = options_to_json(auth_options)
 
-                if (!loginResponse.ok) {
-                    const error = await loginResponse.json();
-                    throw new Error(`Server error: ${error.message}`);
-                }
+        print_with_box(opts)
 
-                alert('Login successful!');
-            } catch (err) {
-                console.error('Login failed:', err);
-                alert('Login failed! Check console for more details.');
-            }
-        }
-            </script>
-    """
+        return opts
 
-# Passkey Registration
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    if request.method == "GET":
-        try:
-            # Generate options for creating a new passkey
-            user_id = os.urandom(8)  # Random user ID
-            session['user_id'] = user_id.hex()
-            user = PublicKeyCredentialUserEntity(
-                id=user_id,
-                name="test_user",
-                display_name="Test User"
+    abort(500)
+
+
+# ============================================================================ #
+#                        PASSKEY AUTHENTICATION PHASE 2                        #
+# ============================================================================ #
+# TODO: Test if spoofing the key works
+@app.post("/verify-authentication")
+def login_post():
+    user_name = session.get("user_name")
+    if user_name is not None and user_name in users:
+        verified_registration = users[user_name]
+        if request.is_json:
+            request_json = request.get_json()
+            verification = verify_authentication_response(
+                credential=request_json,
+                expected_challenge=global_challenge,
+                expected_rp_id=global_rp_id,
+                expected_origin=global_expected_origin,
+                credential_current_sign_count=0,  # TODO: Update dict to hold this and increment
+                credential_public_key=verified_registration.credential_public_key,
             )
-            # Unpack the tuple returned by `register_begin`
-            options, state = server.register_begin(user, user_verification="discouraged")
-            session['challenge_state'] = state  # Store state in session directly
+            verification_json = json.dumps(asdict(verification), default=str)
+            print_with_box(verification_json)
 
-            # Access fields from `options.public_key` to create a JSON-compatible dictionary
-            public_key_options = options.public_key
-            options_dict = {
-                "challenge": base64.b64encode(public_key_options.challenge).decode('utf-8'),
-                "rp": {
-                    "name": public_key_options.rp.name,
-                    "id": public_key_options.rp.id
-                },
-                "user": {
-                    "id": base64.b64encode(public_key_options.user.id).decode('utf-8'),
-                    "name": public_key_options.user.name,
-                    "displayName": public_key_options.user.display_name
-                },
-                "pubKeyCredParams": [
-                    {
-                        "type": param.type.value,
-                        "alg": param.alg
-                    } for param in public_key_options.pub_key_cred_params
-                ],
-                "timeout": public_key_options.timeout,
-                "excludeCredentials": [
-                    {
-                        "id": base64.b64encode(cred.id).decode('utf-8'),
-                        "type": cred.type
-                    } for cred in (public_key_options.exclude_credentials or [])
-                ],
-                "authenticatorSelection": {
-                    "authenticatorAttachment": public_key_options.authenticator_selection.authenticator_attachment if public_key_options.authenticator_selection.authenticator_attachment else None,
-                    "residentKey": public_key_options.authenticator_selection.resident_key.value,
-                    "userVerification": public_key_options.authenticator_selection.user_verification.value,
-                    "requireResidentKey": public_key_options.authenticator_selection.require_resident_key
-                },
-                "attestation": public_key_options.attestation if public_key_options.attestation else None
-            }
+            return verification_json
 
-            # Send the `publicKey` options to the client
-            return jsonify({"publicKey": options_dict})  # Only `options` is sent
+    abort(500)
 
-        except Exception as e:
-            traceback.print_exc()
-            return jsonify({"status": "error", "message": str(e)}), 500
 
-    if request.method == "POST":
-        # Complete registration
-        data = request.get_json()
-        try:
-            attestation_object = websafe_decode(data["attestationObject"])
-            client_data = websafe_decode(data["clientDataJSON"])
-
-            auth_data = server.register_complete(
-                session["challenge_state"],
-                client_data,
-                AttestationObject(attestation_object),
-            )
-
-            # Store credential
-            user_id = bytes.fromhex(session["user_id"])
-            users[user_id] = {
-                "credential_id": auth_data.credential_data.credential_id.hex(),
-                "public_key": auth_data.credential_data.public_key
-            }
-
-            return jsonify({"status": "ok"})
-        except Exception as e:
-            traceback.print_exc()
-            return jsonify({"status": "error", "message": str(e)}), 400
-
-# Passkey Authentication
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "GET":
-        try:
-            # Generate options for logging in
-            credentials = [
-                {
-                    "id": base64.b64encode(bytes.fromhex(user["credential_id"])).decode('utf-8'),
-                    "type": "public-key",
-                }
-                for user in users.values()
-            ]
-            options, state = server.authenticate_begin(credentials)
-            session['challenge_state'] = state  # Store state in session directly
-
-            # Access fields from `options` to create a JSON-compatible dictionary
-            options_dict = {
-                "challenge": base64.b64encode(options.challenge).decode('utf-8'),
-                "timeout": options.timeout,
-                "rpId": options.rp_id,
-                "allowCredentials": [
-                    {
-                        "id": base64.b64encode(cred.id).decode('utf-8'),
-                        "type": cred.type
-                    } for cred in options.allow_credentials
-                ],
-                "userVerification": options.user_verification.value
-            }
-
-            return jsonify({"publicKey": options_dict})
-        except Exception as e:
-            traceback.print_exc()
-            return jsonify({"status": "error", "message": str(e)}), 500
-
-    if request.method == "POST":
-        # Complete authentication
-        data = request.get_json()
-        try:
-            credential_id = websafe_decode(data["credentialId"])
-            client_data = websafe_decode(data["clientDataJSON"])
-            auth_data = websafe_decode(data["authenticatorData"])
-            signature = websafe_decode(data["signature"])
-
-            # Find user by credential_id
-            user = next(
-                (user for user in users.values() if user["credential_id"] == credential_id.hex()), None
-            )
-            if not user:
-                return jsonify({"status": "error", "message": "User not found"}), 400
-
-            # Verify authentication
-            server.authenticate_complete(
-                session["challenge_state"],
-                user["public_key"],
-                AuthenticatorData(auth_data),
-                client_data,
-                signature,
-            )
-            return jsonify({"status": "ok"})
-        except Exception as e:
-            traceback.print_exc()
-            return jsonify({"status": "error", "message": str(e)}), 400
-
+# ============================================================================ #
+#                                  ENTRY POINT                                 #
+# ============================================================================ #
 if __name__ == "__main__":
-    app.run(debug=True, port=80)
+    app.run(debug=True, port=8080)
