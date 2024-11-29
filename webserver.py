@@ -46,7 +46,9 @@ def home():
                     throw new Error(`Server error: ${errorText}`);
                 }
                 const options = await response.json();
-                console.log('Registration options:', options);
+                
+                // Debugging note: Displaying registration options in the console for verification purposes
+                console.log('Registration options:', options); 
 
                 // Remove fields that are not explicitly required or are null
                 if (options.publicKey.attestation === null) {
@@ -102,7 +104,7 @@ def home():
                     throw new Error(`Server error: ${errorText}`);
                 }
                 const options = await response.json();
-                console.log('Login options:', options);
+                console.log('Login options:', options); // Debugging note: Displaying login options in the console for verification purposes
 
                 // Remove fields that are not explicitly required or are null
                 if (options.publicKey.authenticatorSelection && options.publicKey.authenticatorSelection.authenticatorAttachment === null) {
