@@ -154,7 +154,7 @@ def login_get():
                 PublicKeyCredentialDescriptor(id=verified_registration.credential_id)
             ],
         )
-        opts = options_to_json()
+        opts = options_to_json(auth_options)
 
         print_with_box(opts)
 
@@ -168,18 +168,23 @@ def login_get():
 # ============================================================================ #
 @app.post("/verify-authentication")
 def login_post():
-    if request.is_json:
-        request_json = request.get_json()
-        verification = verify_authentication_response(
-            credential=request_json,
-            expected_challenge=global_challenge,
-            expected_rp_id=global_rp_id,
-            expected_origin="http://localhost:8080",
-        )
-        verification_json = json.dumps(asdict(verification), default=str)
-        print_with_box(verification_json)
+    user_name = session.get("user_name")
+    if user_name is not None and user_name in users:
+        verified_registration = users[user_name]
+        if request.is_json:
+            request_json = request.get_json()
+            verification = verify_authentication_response(
+                credential=request_json,
+                expected_challenge=global_challenge,
+                expected_rp_id=global_rp_id,
+                expected_origin="http://localhost:8080",
+                credential_current_sign_count=0,  # TODO: Update dict to hold this and increment
+                credential_public_key=verified_registration.credential_public_key,
+            )
+            verification_json = json.dumps(asdict(verification), default=str)
+            print_with_box(verification_json)
 
-        return verification_json
+            return verification_json
 
     abort(500)
 
