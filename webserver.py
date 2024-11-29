@@ -6,6 +6,8 @@ from fido2.utils import websafe_encode, websafe_decode
 import os
 import secrets
 import string
+import fido2.features
+fido2.features.webauthn_json_mapping.enabled = True
 
 os.environ["WERKZEUG_DEBUG_PIN"] = "off"
 
@@ -41,29 +43,63 @@ def home():
 # Passkey Registration
 @app.get("/generate-registration-options")
 def register_get():
-    # Generate options for creating a new passkey
-    user_id = random_alphanumeric_string(8)  # Random user ID
-    # TO-DO
-    return
+    options, state = server.register_begin(
+        PublicKeyCredentialUserEntity(
+            id=bytes(random_alphanumeric_string(8), 'utf-8'),  # Convert string to bytes
+            name="user",
+            display_name="User",
+        ),
+        users.get('credentials', []),  # Use existing credentials if any
+        user_verification="discouraged",
+        authenticator_attachment="cross-platform",
+    )
+    
+    session["state"] = state
+    return jsonify(dict(options))
 
 
 @app.post("/verify-registration")
 def register_post():
-    # Complete registration
-    return
+    try:
+        response = request.json
+        auth_data = server.register_complete(session["state"], response)
+        
+        # Store the credential data
+        if 'credentials' not in users:
+            users['credentials'] = []
+        users['credentials'].append(auth_data.credential_data)
+        
+        return jsonify({"status": "OK"})
+    except Exception as e:
+        return jsonify({"status": "failed", "error": str(e)}), 400
 
 
 # Passkey Authentication
-@app.get("/login")
+@app.get("/generate-authentication-options")
 def login_get():
-    # TO-DO
-    return
+    if 'credentials' not in users or not users['credentials']:
+        return jsonify({"error": "No credentials registered"}), 404
+        
+    options, state = server.authenticate_begin(users['credentials'])
+    session["state"] = state
+    return jsonify(dict(options))
 
 
-@app.post("/login")
+@app.post("/verify-authentication")
 def login_post():
-    # TO-DO
-    return
+    if 'credentials' not in users or not users['credentials']:
+        return jsonify({"error": "No credentials registered"}), 404
+        
+    try:
+        response = request.json
+        server.authenticate_complete(
+            session.pop("state"),
+            users['credentials'],
+            response,
+        )
+        return jsonify({"status": "OK"})
+    except Exception as e:
+        return jsonify({"status": "failed", "error": str(e)}), 400
 
 
 if __name__ == "__main__":
