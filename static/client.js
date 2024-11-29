@@ -43,7 +43,7 @@ window.loginPasskey = async function() {
   let asseResp
   // Pass the options to the authenticator and wait for a response
   asseResp = await startAuthentication({ optionsJSON })
-
+  console.log(asseResp)
 
   // POST the response to the endpoint that calls
   // @simplewebauthn/server -> verifyAuthenticationResponse()
