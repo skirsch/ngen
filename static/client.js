@@ -16,6 +16,8 @@ window.registerPasskey = async function() {
     throw error
   }
 
+  console.log(attResp)
+
   // POST the response to the endpoint that calls
   // @simplewebauthn/server -> verifyRegistrationResponse()
   const verificationResp = await fetch('/verify-registration', {

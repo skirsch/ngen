@@ -1,4 +1,5 @@
-from flask import Flask, request, jsonify, render_template, session
+import json
+from flask import Flask, abort, request, jsonify, render_template, session
 import os
 import secrets
 import string
@@ -16,13 +17,19 @@ from webauthn.helpers.structs import (
     PublicKeyCredentialDescriptor,
     ResidentKeyRequirement,
 )
+from dataclasses import asdict
 
 # ============================================================================ #
 #                                    GLOBALS                                   #
 # ============================================================================ #
 os.environ["WERKZEUG_DEBUG_PIN"] = "off"
 # Global Challenge
-global_challenge: bytes = b"dead beef"
+global_challenge: bytes = b"dead beef hi hi hi test hi"
+
+# ----------------------------- WENAUTHN GLOBALS ----------------------------- #
+global_rp_id = "localhost"
+global_rp_name = "ZeroID"
+
 
 # Simulated database
 users = {}
@@ -31,17 +38,6 @@ users = {}
 def random_alphanumeric_string(length: int):
     characters = string.ascii_letters + string.digits
     return "".join(secrets.choice(characters) for _ in range(length))
-
-
-# ----------------------------- AUTH BOILERPLATE ----------------------------- #
-simple_registration_options = generate_registration_options(
-    rp_id="example.com",
-    rp_name="Example Co",
-    user_name="bob",
-)
-
-print("\n[Registration Options - Simple]")
-print(options_to_json(simple_registration_options))
 
 
 # ============================================================================ #
@@ -60,21 +56,43 @@ def home():
 
 
 # ============================================================================ #
-#                         PASSKEY REGISTRATION PHASE 1                         #
+#                        PASSKEY REGISTRATION GENERATION                       #
 # ============================================================================ #
 @app.get("/generate-registration-options")
 def register_get():
-    # FIXME: IMPLEMENT
-    return
+    random_name = random_alphanumeric_string(6)
+    session["user_name"] = random_name
+    opts = options_to_json(
+        generate_registration_options(
+            rp_id=global_rp_id,
+            rp_name=global_rp_name,
+            user_name=random_name,
+            challenge=global_challenge,
+        )
+    )
+    print(opts)
+    return opts
 
 
 # ============================================================================ #
-#                         PASSKEY REGISTRATION PHASE 2                         #
+#                       PASSKEY REGISTRATION VERIFICATION                      #
 # ============================================================================ #
 @app.post("/verify-registration")
 def register_post():
-    # FIXME: IMPLEMENT
-    return
+    if request.is_json:
+        request_json = request.get_json()
+        verification = verify_registration_response(
+            credential=request_json,
+            expected_challenge=global_challenge,
+            expected_rp_id=global_rp_id,
+            expected_origin="http://localhost:8080",
+        )
+        print(verification)
+        verification_json = json.dumps(asdict(verification), default=str)
+        print(verification_json)
+
+        return verification_json
+    abort(500)
 
 
 # ============================================================================ #
