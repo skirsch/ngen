@@ -1,123 +1,125 @@
-<h1>Welcome to the WebAuthn Demo</h1>
-<button onclick="registerPasskey()">Create a Passkey</button>
-<button onclick="loginPasskey()">Login via Passkey</button>
-<script>
+<html>
 
-  function bufferDecode(value) {
-    const binaryString = atob(value)
-    const len = binaryString.length
-    const bytes = new Uint8Array(len)
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryString.charCodeAt(i)
-    }
-    return bytes.buffer
-  }
+<head>
+  <script src="https://unpkg.com/@simplewebauthn/browser@12.0.0/dist/bundle/index.umd.min.js" integrity="sha384-P4Fkl0lrvWnwFqWp+OT9WLUCc1imsCjxKjM03WCVAUFGqYd4R83HEANdThajTXi/" crossorigin="anonymous"></script>
+</head>
 
-  async function registerPasskey() {
-    const response = await fetch('/register', { method: 'GET' })
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`Server error: ${errorText}`)
-    }
-    const options = await response.json()
+</html>
 
-    // Debugging note: Displaying registration options in the console for verification purposes
-    console.log('Registration options:', options)
+<body>
+  <h1>Welcome to the WebAuthn Demo</h1>
+  <button onclick="registerPasskey()">Create a Passkey</button>
+  <button onclick="loginPasskey()">Login via Passkey</button>
+  <script>
 
-    // Remove fields that are not explicitly required or are null
-    if (options.publicKey.attestation === null) {
-      delete options.publicKey.attestation
-    }
-    if (options.publicKey.authenticatorSelection && options.publicKey.authenticatorSelection.authenticatorAttachment === null) {
-      delete options.publicKey.authenticatorSelection.authenticatorAttachment
+    function bufferDecode(value) {
+      const binaryString = atob(value)
+      const len = binaryString.length
+      const bytes = new Uint8Array(len)
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i)
+      }
+      return bytes.buffer
     }
 
-    // Convert challenge and user.id to ArrayBuffer
-    options.publicKey.challenge = bufferDecode(options.publicKey.challenge)
-    options.publicKey.user.id = bufferDecode(options.publicKey.user.id)
-    options.publicKey.excludeCredentials = options.publicKey.excludeCredentials.map(cred => {
-      cred.id = bufferDecode(cred.id)
-      return cred
-    })
-
-    const credential = await navigator.credentials.create({ publicKey: options.publicKey })
-    const attestationObject = btoa(String.fromCharCode(...new Uint8Array(credential.response.attestationObject)))
-    const clientDataJSON = btoa(String.fromCharCode(...new Uint8Array(credential.response.clientDataJSON)))
-
-    const registrationResponse = await fetch('/register', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        id: credential.id,
-        rawId: btoa(String.fromCharCode(...new Uint8Array(credential.rawId))),
-        type: credential.type,
-        attestationObject: attestationObject,
-        clientDataJSON: clientDataJSON
-      })
-    })
-
-    if (!registrationResponse.ok) {
-      const error = await registrationResponse.json()
-      throw new Error(`Server error: ${error.message}`)
-    }
-
-    alert('Passkey registration successful!')
-
-  }
-
-  async function loginPasskey() {
-    try {
-      const response = await fetch('/login', { method: 'GET' })
+    async function registerPasskey() {
+      const response = await fetch('/register', { method: 'GET' })
       if (!response.ok) {
         const errorText = await response.text()
         throw new Error(`Server error: ${errorText}`)
       }
       const options = await response.json()
-      console.log('Login options:', options) // Debugging note: Displaying login options in the console for verification purposes
 
-      // Remove fields that are not explicitly required or are null
-      if (options.publicKey.authenticatorSelection && options.publicKey.authenticatorSelection.authenticatorAttachment === null) {
-        delete options.publicKey.authenticatorSelection.authenticatorAttachment
-      }
+      // Debugging note: Displaying registration options in the console for verification purposes
+      console.log('Registration options:', options)
 
-      // Convert challenge and allowCredentials.id to ArrayBuffer
+      // Convert challenge and user.id to ArrayBuffer
       options.publicKey.challenge = bufferDecode(options.publicKey.challenge)
-      options.publicKey.allowCredentials = options.publicKey.allowCredentials.map(cred => {
+      options.publicKey.user.id = bufferDecode(options.publicKey.user.id)
+      options.publicKey.excludeCredentials = options.publicKey.excludeCredentials.map(cred => {
         cred.id = bufferDecode(cred.id)
         return cred
       })
 
-      const assertion = await navigator.credentials.get({ publicKey: options.publicKey })
-      const clientDataJSON = btoa(String.fromCharCode(...new Uint8Array(assertion.response.clientDataJSON)))
-      const authenticatorData = btoa(String.fromCharCode(...new Uint8Array(assertion.response.authenticatorData)))
-      const signature = btoa(String.fromCharCode(...new Uint8Array(assertion.response.signature)))
+      const credential = await navigator.credentials.create({ publicKey: options.publicKey })
+      const attestationObject = btoa(String.fromCharCode(...new Uint8Array(credential.response.attestationObject)))
+      const clientDataJSON = btoa(String.fromCharCode(...new Uint8Array(credential.response.clientDataJSON)))
 
-      const loginResponse = await fetch('/login', {
+      const registrationResponse = await fetch('/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          id: assertion.id,
-          rawId: btoa(String.fromCharCode(...new Uint8Array(assertion.rawId))),
-          type: assertion.type,
-          clientDataJSON: clientDataJSON,
-          authenticatorData: authenticatorData,
-          signature: signature
+          id: credential.id,
+          rawId: btoa(String.fromCharCode(...new Uint8Array(credential.rawId))),
+          type: credential.type,
+          attestationObject: attestationObject,
+          clientDataJSON: clientDataJSON
         })
       })
 
-      if (!loginResponse.ok) {
-        const error = await loginResponse.json()
+      if (!registrationResponse.ok) {
+        const error = await registrationResponse.json()
         throw new Error(`Server error: ${error.message}`)
       }
 
-      alert('Login successful!')
-    } catch (err) {
-      console.error('Login failed:', err)
-      alert('Login failed! Check console for more details.')
+      alert('Passkey registration successful!')
+
     }
-  }
-</script>
+
+    async function loginPasskey() {
+      try {
+        const response = await fetch('/login', { method: 'GET' })
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(`Server error: ${errorText}`)
+        }
+        const options = await response.json()
+        console.log('Login options:', options) // Debugging note: Displaying login options in the console for verification purposes
+
+        // Remove fields that are not explicitly required or are null
+        if (options.publicKey.authenticatorSelection && options.publicKey.authenticatorSelection.authenticatorAttachment === null) {
+          delete options.publicKey.authenticatorSelection.authenticatorAttachment
+        }
+
+        // Convert challenge and allowCredentials.id to ArrayBuffer
+        options.publicKey.challenge = bufferDecode(options.publicKey.challenge)
+        options.publicKey.allowCredentials = options.publicKey.allowCredentials.map(cred => {
+          cred.id = bufferDecode(cred.id)
+          return cred
+        })
+
+        const assertion = await navigator.credentials.get({ publicKey: options.publicKey })
+        const clientDataJSON = btoa(String.fromCharCode(...new Uint8Array(assertion.response.clientDataJSON)))
+        const authenticatorData = btoa(String.fromCharCode(...new Uint8Array(assertion.response.authenticatorData)))
+        const signature = btoa(String.fromCharCode(...new Uint8Array(assertion.response.signature)))
+
+        const loginResponse = await fetch('/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            id: assertion.id,
+            rawId: btoa(String.fromCharCode(...new Uint8Array(assertion.rawId))),
+            type: assertion.type,
+            clientDataJSON: clientDataJSON,
+            authenticatorData: authenticatorData,
+            signature: signature
+          })
+        })
+
+        if (!loginResponse.ok) {
+          const error = await loginResponse.json()
+          throw new Error(`Server error: ${error.message}`)
+        }
+
+        alert('Login successful!')
+      } catch (err) {
+        console.error('Login failed:', err)
+        alert('Login failed! Check console for more details.')
+      }
+    }
+  </script>
+</body>
