@@ -3,12 +3,9 @@ from fido2.server import Fido2Server
 from fido2.webauthn import AttestationObject, AuthenticatorData
 from fido2.webauthn import PublicKeyCredentialRpEntity, PublicKeyCredentialUserEntity
 from fido2.utils import websafe_encode, websafe_decode
-import base64
 import os
-import traceback
 import secrets
 import string
-
 
 os.environ["WERKZEUG_DEBUG_PIN"] = "off"
 
@@ -37,87 +34,36 @@ users = {}
 # Home page
 @app.route("/")
 def home():
-    with open("templates/index.html") as f:
+    with open("static/index.html") as f:
         return f.read()
 
 
 # Passkey Registration
-@app.get("/register")
+@app.get("/generate-registration-options")
 def register_get():
     # Generate options for creating a new passkey
     user_id = random_alphanumeric_string(8)  # Random user ID
-    user = PublicKeyCredentialUserEntity(
-        id=user_id, name="test_user", display_name="Test User"
-    )
-    # Unpack the tuple returned by `register_begin` to CredentialCreationOptions, State
-    # These will need to be fed in to `register_complete`
-    options, state = server.register_begin(user, user_verification="discouraged")
-
-    # Access fields from `options.public_key` to create a JSON-compatible dictionary
-    public_key_options = options.public_key
-
-    # Send the `publicKey` options to the client
-    return {"publicKey": public_key_options, "state": state}
+    # TO-DO
+    return
 
 
-@app.post("/register")
+@app.post("/verify-registration")
 def register_post():
     # Complete registration
-    data = request.get_json()
-    attestation_object = websafe_decode(data["attestationObject"])
-    client_data = websafe_decode(data["clientDataJSON"])
-
-    auth_data = server.register_complete(
-        session["challenge_state"],
-        client_data,
-        AttestationObject(attestation_object),
-    )
-
-    # Store credential
-    user_id = bytes.fromhex(session["user_id"])
-    users[user_id] = {
-        "credential_id": auth_data.credential_data.credential_id.hex(),
-        "public_key": auth_data.credential_data.public_key,
-    }
-
-    return {"status": "ok"}
+    return
 
 
 # Passkey Authentication
 @app.get("/login")
 def login_get():
-    # Generate options for logging in
-    credentials = [
-        {
-            "id": base64.b64encode(bytes.fromhex(user["credential_id"])).decode(
-                "utf-8"
-            ),
-            "type": "public-key",
-        }
-        for user in users.values()
-    ]
-    options, state = server.authenticate_begin(credentials)
-    session["challenge_state"] = state  # Store state in session directly
-
-    # Access fields from `options` to create a JSON-compatible dictionary
-    options_dict = {
-        "challenge": base64.b64encode(options.challenge).decode("utf-8"),
-        "timeout": options.timeout,
-        "rpId": options.rp_id,
-        "allowCredentials": [
-            {"id": base64.b64encode(cred.id).decode("utf-8"), "type": cred.type}
-            for cred in options.allow_credentials
-        ],
-        "userVerification": options.user_verification.value,
-    }
-
-    return jsonify({"publicKey": options_dict})
+    # TO-DO
+    return
 
 
 @app.post("/login")
 def login_post():
-    # Complete authentication
-
+    # TO-DO
+    return
 
 
 if __name__ == "__main__":
