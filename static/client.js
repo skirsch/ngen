@@ -1,5 +1,5 @@
 const { startRegistration, startAuthentication } = SimpleWebAuthnBrowser
-async function registerPasskey() {
+window.registerPasskey = async function() {
   // Fetch Options from Server
   const resp = await fetch('/generate-registration-options')
   const optionsJSON = await resp.json()
@@ -32,7 +32,7 @@ async function registerPasskey() {
   alert('Passkey registration successful!')
 }
 
-async function loginPasskey() {
+window.loginPasskey = async function() {
   // GET authentication options from the endpoint that calls
   // @simplewebauthn/server -> generateAuthenticationOptions()
   const resp = await fetch('/generate-authentication-options')
