@@ -1,0 +1,53 @@
+{
+  "publicKey": {
+    "attestation": null,
+    "authenticatorSelection": {
+      "authenticatorAttachment": null,
+      "requireResidentKey": false,
+      "residentKey": "discouraged",
+      "userVerification": "discouraged"
+    },
+    "challenge": "gZplrGz5QfN-uiTIKrUpthij8i-C1NoFx1d2kKH0QDk",
+    "excludeCredentials": [],
+    "pubKeyCredParams": [
+      {
+        "alg": -7,
+        "type": "public-key"
+      },
+      {
+        "alg": -8,
+        "type": "public-key"
+      },
+      {
+        "alg": -35,
+        "type": "public-key"
+      },
+      {
+        "alg": -36,
+        "type": "public-key"
+      },
+      {
+        "alg": -37,
+        "type": "public-key"
+      },
+      {
+        "alg": -257,
+        "type": "public-key"
+      },
+      {
+        "alg": -47,
+        "type": "public-key"
+      }
+    ],
+    "rp": {
+      "id": "localhost",
+      "name": "My WebAuthn Server"
+    },
+    "timeout": null,
+    "user": {
+      "displayName": "Test User",
+      "id": "6D_Hbdf3Wdg",
+      "name": "test_user"
+    }
+  }
+}
