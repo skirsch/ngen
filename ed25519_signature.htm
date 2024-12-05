@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TweetNaCl.js in Browser</title>
+    <script src="https://cdn.jsdelivr.net/npm/tweetnacl/nacl.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tweetnacl-util/nacl-util.min.js"></script>
+</head>
+<body>
+    <h1>TweetNaCl.js Example in Browser</h1>
+    <script>
+        // Generate a key pair
+        const keyPair = nacl.sign.keyPair();
+
+        // Message to sign
+        const message = "Hello, TweetNaCl in the browser!";
+        const messageUint8 = nacl.util.decodeUTF8(message); // Convert string to Uint8Array
+
+        // Sign the message
+        const signature = nacl.sign.detached(messageUint8, keyPair.secretKey);
+
+        // Log the signature (in Base64 format for readability)
+        console.log("Signature (Base64):", nacl.util.encodeBase64(signature));
+
+        // Verify the signature
+        const isValid = nacl.sign.detached.verify(
+            messageUint8,
+            signature,
+            keyPair.publicKey
+        );
+
+        console.log("Is the signature valid?", isValid);
+    </script>
+</body>
+</html>
