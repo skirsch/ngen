@@ -1,3 +1,7 @@
+### NOTE: this is NOT the best way to do it. The exemplary login is at github which will prompt first for Roboform, then the native system provider
+### this method just calls the native provider. 
+
+
 import json
 from flask import Flask, abort, request, jsonify, render_template, session
 import os
@@ -35,6 +39,7 @@ global_challenge: bytes = b"dead beef hi hi hi test hi"
 global_rp_id = "localhost"
 global_rp_name = "ZeroID"
 global_expected_origin = "http://localhost:8080"
+# global_expected_origin = "http://stk-home:8080"
 
 # ============================================================================ #
 #                              SIMULATED DATABASE                              #
@@ -194,4 +199,5 @@ def login_post():
 #                                  ENTRY POINT                                 #
 # ============================================================================ #
 if __name__ == "__main__":
-    app.run(debug=True, port=8080)
+    # without host, it will only be available on localhost. To make externally available, use 0.0.0.0
+    app.run(debug=True, port=8080, host="0.0.0.0") 
